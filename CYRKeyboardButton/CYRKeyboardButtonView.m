@@ -43,6 +43,10 @@
 @property (nonatomic, strong) NSMutableArray *inputOptionRects;
 @property (nonatomic, assign) NSInteger selectedInputIndex;
 
+@property (nonatomic, assign) NSInteger maxKeysPerRow;
+@property (nonatomic, assign) NSInteger keysPerRow;
+@property (nonatomic, assign) NSInteger numberOfRows;
+
 @end
 
 @implementation CYRKeyboardButtonView
@@ -63,6 +67,12 @@
         _button = button;
         _type = type;
         _selectedInputIndex = 0;
+		
+		_maxKeysPerRow = 9;
+		_keysPerRow = MIN( 1 + ((self.button.inputOptions.count - 1) / 2), _maxKeysPerRow );
+
+		//TODO: "Int ceil divide"
+		_numberOfRows = 1 + ((self.button.inputOptions.count - 1) / _keysPerRow);
         
         self.backgroundColor = [UIColor clearColor];
         self.userInteractionEnabled = NO;
@@ -97,18 +107,45 @@
     CGRect testRect = CGRectMake(point.x, point.y, 0, 0);
     
     CGPoint location = [self convertRect:testRect fromView:self.button.superview].origin;
-    
+	
     [self.inputOptionRects enumerateObjectsUsingBlock:^(NSValue *rectValue, NSUInteger idx, BOOL *stop) {
+		
         CGRect keyRect = [rectValue CGRectValue];
-        CGRect infiniteKeyRect = CGRectMake(CGRectGetMinX(keyRect), 0, CGRectGetWidth(keyRect), NSIntegerMax);
-        infiniteKeyRect = CGRectInset(infiniteKeyRect, -3, 0);
-        
-        if (CGRectContainsPoint(infiniteKeyRect, location)) {
-            selectedInputIndex = idx;
-            *stop = YES;
-        }
+		CGRect infiniteKeyRect = CGRectZero;
+		
+		if (_numberOfRows == 1) {
+			infiniteKeyRect = CGRectMake(CGRectGetMinX(keyRect), 0, CGRectGetWidth(keyRect), NSIntegerMax);
+			infiniteKeyRect = CGRectInset(infiniteKeyRect, -3, 0);
+			
+			if (CGRectContainsPoint(infiniteKeyRect, location)) {
+				selectedInputIndex = idx;
+				*stop = YES;
+			}
+		} else if (_numberOfRows == 2) {
+			NSInteger row = idx / _keysPerRow;
+			
+			if (row == 0) {
+				infiniteKeyRect = CGRectMake(CGRectGetMinX(keyRect), CGRectGetMinY(keyRect), CGRectGetWidth(keyRect), NSIntegerMax);
+				infiniteKeyRect = CGRectInset(infiniteKeyRect, -3, 0);
+			} else {
+				infiniteKeyRect = CGRectMake(CGRectGetMinX(keyRect), 0, CGRectGetWidth(keyRect), CGRectGetMaxY(keyRect));
+				infiniteKeyRect = CGRectInset(infiniteKeyRect, -3, 0);
+			}
+			
+			if (CGRectContainsPoint(infiniteKeyRect, location)) {
+				selectedInputIndex = idx;
+				*stop = YES;
+			}
+		} else {
+			if (CGRectContainsPoint(keyRect, location)) {
+				selectedInputIndex = idx;
+				*stop = YES;
+			}
+		}
+		
+		
     }];
-    
+	
     if (self.selectedInputIndex != selectedInputIndex) {
         self.selectedInputIndex = selectedInputIndex;
         [self setNeedsDisplay];
@@ -410,7 +447,9 @@
     
     UIEdgeInsets insets = UIEdgeInsetsMake(7, 13, 7, 13);
     CGFloat margin = 7.f;
-    CGFloat upperWidth = insets.left + insets.right + self.button.inputOptions.count * CGRectGetWidth(keyRect) + margin * (self.button.inputOptions.count - 1) - margin/2;
+	
+	NSInteger maxColumn = MIN(self.button.inputOptions.count, _keysPerRow);
+    CGFloat upperWidth = insets.left + insets.right + maxColumn * CGRectGetWidth(keyRect) + margin * (maxColumn - 1) - margin/2;
     CGFloat lowerWidth = CGRectGetWidth(_button.frame);
     CGFloat majorRadius = 10.f;
     CGFloat minorRadius = 4.f;
@@ -431,7 +470,7 @@
                     [path rightArc:majorRadius turn:90]; // #1
                     [path forward:upperWidth - 2 * majorRadius]; // #2 top
                     [path rightArc:majorRadius turn:90]; // #3
-                    [path forward:CGRectGetHeight(keyRect) - 2 * majorRadius + insets.top + insets.bottom - 3]; // #4 right big
+                    [path forward:(CGRectGetHeight(keyRect) * _numberOfRows) - 2 * majorRadius + insets.top + insets.bottom - 3]; // #4 right big
                     [path rightArc:majorRadius turn:90]; // #5
                     [path forward:path.currentPoint.x - (CGRectGetWidth(keyRect) + 2 * majorRadius + 3)];
                     [path leftArc:majorRadius turn:90]; // #6
@@ -482,7 +521,7 @@
                     [path rightArc:majorRadius turn:90]; // #1
                     [path forward:upperWidth - 2 * majorRadius]; // #2 top
                     [path rightArc:majorRadius turn:90]; // #3
-                    [path forward:CGRectGetHeight(keyRect) - 2 * majorRadius + insets.top + insets.bottom - 3]; // #4 right big
+                    [path forward:(CGRectGetHeight(keyRect) * _numberOfRows) - 2 * majorRadius + insets.top + insets.bottom - 3]; // #4 right big
                     
                     [path rightArc:majorRadius turn:48];
                     [path forward:8.5f];
@@ -560,24 +599,37 @@
         default:
             break;
     }
-    
+	
+	__block NSInteger row = 0;
+	__block NSInteger column = 0;
+	__block CGFloat yOffset = 0.f;
+	__block CGFloat xOffset = 0.f;
+	
     [self.button.inputOptions enumerateObjectsUsingBlock:^(NSString *option, NSUInteger idx, BOOL *stop) {
-        
-        [inputOptionRects addObject:[NSValue valueWithCGRect:optionRect]];
-        
-        // Offset the option rect
+		
+		row = idx / _keysPerRow;
+		column = idx % _keysPerRow;
+		
+		yOffset = -row * 40;
+		xOffset = (offset+spacing) * column;
+		
+		CGRect rect = CGRectZero;
+		
         switch (_expandedPosition) {
             case CYRKeyboardButtonPositionRight:
-                optionRect = CGRectOffset(optionRect, +(offset + spacing), 0);
+				
                 break;
                 
             case CYRKeyboardButtonPositionLeft:
-                optionRect = CGRectOffset(optionRect, -(offset + spacing), 0);
+				xOffset = -xOffset;
                 break;
                 
             default:
                 break;
         }
+		
+		rect = CGRectOffset(optionRect, xOffset, yOffset);
+		[inputOptionRects addObject:[NSValue valueWithCGRect:rect]];
     }];
     
     self.inputOptionRects = inputOptionRects;
